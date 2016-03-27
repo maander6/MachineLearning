@@ -1,2 +1,4 @@
 # MachineLearning
-repo for files associated with the Practical Machine Learning Course
+Repo for files associated with the Practical Machine Learning Course
+
+Files contained include
