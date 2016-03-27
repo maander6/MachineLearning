@@ -2,7 +2,7 @@
 title: 'Practical Machine Learning Project: '
 author: "Mark Anderson"
 date: "March 20, 2016"
-output: html_document
+output: pdf_document
 ---
 
 ## Summary
@@ -47,7 +47,6 @@ if(length(nzv)>0) pmltraining <- pmltraining[,-nzv]
 inTrain <- createDataPartition(pmltraining$classe, p=0.7, list=FALSE)
 training <- pmltraining[inTrain,]
 pmlvalid <- pmltraining[-inTrain,]
-
 ```
 
 Because there are no variables that are strongly correlated to each other, no variables are deleted from the model.
@@ -81,11 +80,13 @@ The simple tree model had an overall prediction accuracy of `r format(tree_conf$
 
 ### Random Forest
 
- A random forest model was next applied to the dataset to see if it would lead to an improvement in prediction accuracy.
+ A random forest model was next applied to the dataset to see if it would lead to an improvement in prediction accuracy.  For the Random Forest model, K-fold cross-validation is utilized.
+ 
 ```{r Random_Forest}
 set.seed(5678)
+control <- trainControl(method="cv", number=5)
 ptm <- proc.time()
-rf_mod <- randomForest(as.factor(classe) ~ ., data=training, ntree=1000)
+rf_mod <- randomForest(as.factor(classe) ~ ., data=training, trControl=control, ntree=1000)
 tm1 <- proc.time()-ptm
 ## 
 ## Measure the processing time to compare computational efficiencey of
@@ -144,7 +145,7 @@ set.seed(1357)
 ptm <- proc.time()
 ## create a model using the random forest 
 ##
-rf_model2 <- randomForest(as.factor(classe) ~ ., data=training1, ntree=1000)
+rf_model2 <- randomForest(as.factor(classe) ~ ., data=training1, trcontrol=control, ntree=1000)
 tm2 <- proc.time() - ptm
 tm2
 imp_predict <- predict(rf_model2, newdata=pmlvalid)
