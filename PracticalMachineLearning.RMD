@@ -1,0 +1,167 @@
+---
+title: 'Practical Machine Learning Project: '
+author: "Mark Anderson"
+date: "March 20, 2016"
+output: html_document
+---
+
+## Summary
+
+Wearable activity monitors are becoming pervasive in today's society.  Fitbit, Jawbone, Nike FuelBand, etc. are recording activity levels for many people.  With these devices, significant amounts of data about activity are available that could potentially be used to monitor and improve personal health.  These devices, however, are only recording the amount of activity, and they do not record nor quantify the quality of the activity (e.g. if the exercise activity was conducted properly).  A set of data was collected (Velloso et. al,  Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.) for Six healthy participants performing a set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E).  Class A is the correct execution of the exercise, and the other classes are commonly found incorrect methods which yield poorer fitness results.  In this exercise, accelerometer data from wearable devices is analyzed to determine if one can predict if the dumbbell curl is being performed correctly based on data collected from a fitness monitor; and, if the exercise is not being executed correctly, what the error in the technique is to provide feedback to the subject.
+
+The data are fit to two models, a simple tree and a random forest model using all the variables from the personal activity monitor.  From these models, the Tree model had an accuracy of 49% and the Random Forest model had an accuracty of 99%. The better random forest model is then evaluated to see if reducing the number of variables used can simplify the model without sacrificing the accuracy of the prediction.  From this analysis, using only 25 of the variables to fit the model lowers the accuracy slightly, but we gain computational efficiency (reducing the time of the model generation by 50%).  When using the Random Forest method to model the data, an out of sample error rate of 0.41% is found. 
+
+
+```{r include=FALSE}
+library(caret)
+library(rpart)
+library(randomForest)
+library(rattle)
+```
+
+## Model Generation
+
+The data is downloaded from the coursera course web-site to a local directory. From there, it is loaded into the R environment, and the columns with no data or NA values are deleted from the training set.  The training data set is separated into a training dataset and a validation data set that are used to fit a model to the data and validate the accuracy of the model.  The model can then be used to make predictions with the test data.
+
+```{r training_data}
+##Read in the training dataset
+##
+pmltraining <- read.csv("./pml-training.csv", na.strings=c("NA", ""))
+##remove the columns with NA values
+##
+pmltraining <- pmltraining[colSums(is.na(pmltraining))==0]
+##remove the columns that contain identification data
+##
+pmltraining <- pmltraining[,-(1:7)]
+##
+## Determine if any of the variables in the data are correlated by calculating the near Zero 
+## Variance.  If values are correlated (by having a variance that is near zero), 
+## that variable will be deleted from the dataset that the model will be calculated from.
+##
+nzv <- nearZeroVar(pmltraining[,-53])
+if(length(nzv)>0) pmltraining <- pmltraining[,-nzv]
+##
+##Separate the pmltraining data into a training set and a test
+##set for model validation
+##
+inTrain <- createDataPartition(pmltraining$classe, p=0.7, list=FALSE)
+training <- pmltraining[inTrain,]
+pmlvalid <- pmltraining[-inTrain,]
+
+```
+
+Because there are no variables that are strongly correlated to each other, no variables are deleted from the model.
+
+### Tree Model
+
+Once the training set is established, two models using different methods are fit to the data.  First, a simple tree model is applied to the data.
+
+```{r Tree_model}
+set.seed(1234)
+tree_mod <- train(as.factor(classe) ~ ., method="rpart", data=training)
+fancyRpartPlot(tree_mod$finalModel)
+##
+## test the model against the pmlvalid (validation) data set
+##
+tree_predict <- predict(tree_mod, pmlvalid)
+tree_conf <- confusionMatrix(tree_predict, pmlvalid$classe)
+```
+From the fit of the model to the validation dataset, we can extract the overall accuracy of this model and the confusion matrix to visually see the ability of this method for predicting the correct exercise type.
+```{r Accuracy_tree }
+tree_conf[2]
+tree_conf$overall[1]
+```
+
+ 
+```{r tree_out_of_sample_error, echo=FALSE}
+err <- pmlvalid$classe == tree_predict
+mra <- length(err[err!=TRUE])/length(pmlvalid$classe)
+```
+The simple tree model had an overall prediction accuracy of `r format(tree_conf$overall[1]*100, digits=4)`%.  The out of sample error rate is estimated by comparing the prediction to the actual class (A,B,C,D, or E) in the validation dataset.  The out of sample error rate is found to be `r format(mra*100, digits=4)`%.  This accuracy was not good as the model only predicts the correct exercise class 50% of the time.
+
+### Random Forest
+
+ A random forest model was next applied to the dataset to see if it would lead to an improvement in prediction accuracy.
+```{r Random_Forest}
+set.seed(5678)
+ptm <- proc.time()
+rf_mod <- randomForest(as.factor(classe) ~ ., data=training, ntree=1000)
+tm1 <- proc.time()-ptm
+## 
+## Measure the processing time to compare computational efficiencey of
+## different models
+##
+tm1
+rf_mod
+## 
+## test the model against teh pmlvalid (validation) dataset
+##
+rf_predict <- predict(rf_mod, newdata=pmlvalid)
+rf_conf <- confusionMatrix(rf_predict, pmlvalid$classe)
+```
+```{r rf_out_of_sample_error}
+err1 <- pmlvalid$classe == rf_predict
+mra <- length(err1[err1!=TRUE])/length(pmlvalid$classe)
+```
+From the fit of the model to the validation dataset, we can extract the overall accuracy of this model and the confusion matrix to visually see the ability of this method for predicting the correct exercise type.
+```{r Accuracy_RF}
+rf_conf[2]
+rf_conf$overall[1]
+```
+
+The random forest model had an overall prediction accuracy of `r format(rf_conf$overall[1]*100, digits=4)`%.  This accuracy was much higher than that found for the simple tree model.  For the model calculated using the Random Forest method, the out of sample error rate is `r format(mra*100, digits=4)`%.
+
+### Combined tree and random forest models
+
+If we combine the two models, will that lead to better prediction accuracy?  This can easily be tested.
+```{r combined}
+predDF <- data.frame(tree_predict, rf_predict, classe=pmlvalid$classe)
+combModFit <- randomForest(as.factor(classe) ~ ., data=predDF, ntree=1000)
+combPred <- predict(combModFit, newdata=predDF)
+comb_conf <- confusionMatrix(combPred, predDF$classe)
+comb_conf[2]
+comb_conf$overall[1]
+```
+From the confusion matrix and the prediction accuracy (`r format(comb_conf$overall[1]*100, digits=4)`%) of the combined model, there is no significant value in the added computational complexity for using the combined model for prediction.
+
+### Examining the Importance of Variables on the Model fit
+
+Finally, I consider simplifying the model to prevent overfitting by eliminating covariants from the dataset that have a small impact on the model fit. Uisng the random forest fit (rf_mod) and using the impVar() function, the importance of each variable in the dataset to the model is determined.  This can be shown graphically using the varImpPlot() function.
+```{r variable_importance}
+## Determine the relative importance of the different variables to the model
+##
+imp_rf_obj <- varImp(rf_mod)
+varImpPlot(rf_mod, sort=TRUE)
+```
+```{r model_with_reduced_data_set}
+## Remove from the training dataset those variables of low importance to the model generation
+##
+impThreshold <- quantile(imp_rf_obj$Overall, 0.5)
+impFilter <- imp_rf_obj$Overall >= impThreshold
+training1 <- training[,impFilter]
+##
+set.seed(1357)
+ptm <- proc.time()
+## create a model using the random forest 
+##
+rf_model2 <- randomForest(as.factor(classe) ~ ., data=training1, ntree=1000)
+tm2 <- proc.time() - ptm
+tm2
+imp_predict <- predict(rf_model2, newdata=pmlvalid)
+imp_conf <- confusionMatrix(imp_predict, pmlvalid$classe)
+imp_conf[2]
+imp_conf$overall[1]
+```
+By considering the variable importance using the varImp function, the number of variables that are fit in the model is reduced from `r ncol(training)-1` to `r ncol(training1)-1`.  This results in a computational time difference of `r tm1[3]` seconds for the model with all the accelerometer variables included compared to `r tm2[3]` seconds when only those variables that have an importance to the model above a certain threshold value - set to the 50th percentile of all those variables in the initial model.
+
+##Conclusions
+Using the model determined by the Random Forest method, predictions of the exercise class from a new set of data are made.  From the model, the 20 exercises of the testing set fall in these catagories
+
+```{r Final_Predictions}
+## Read in the test data
+##
+testing <- read.csv("./pml-testing.csv", na.strings=c("NA", ""))
+test_predict <- predict(rf_mod, newdata=testing)
+test_predict
+```
+The Random Forest model works best for fitting this data.  The out of sample error is estimated to be less than 0.5%.
